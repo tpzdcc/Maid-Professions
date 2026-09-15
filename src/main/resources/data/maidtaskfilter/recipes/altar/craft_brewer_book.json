@@ -1,0 +1,24 @@
+{
+  "type": "touhou_little_maid:altar_crafting",
+  "output": {
+    "type": "minecraft:item",
+    "nbt": {
+      "Item": {
+        "id": "maidtaskfilter:brewer_book",
+        "Count": 1
+      }
+    }
+  },
+  "power": 0.2,
+  "ingredients": [
+    {
+      "item": "maidtaskfilter:blank_job_book"
+    },
+    {
+      "item": "minecraft:glass_bottle"
+    },
+    {
+      "item": "minecraft:sugar"
+    }
+  ]
+}

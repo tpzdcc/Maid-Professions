@@ -1,0 +1,17 @@
+{
+  "itemGroup.maidtaskfilter": "Maid Job Books",
+  "item.maidtaskfilter.blank_job_book": "Blank Job Change Book",
+  "item.maidtaskfilter.farmer_book": "The Secrets of Harvest",
+  "item.maidtaskfilter.rancher_book": "Whispers of the Pasture",
+  "item.maidtaskfilter.melee_book": "Oath of Protection",
+  "item.maidtaskfilter.ranged_book": "The Way of Precision",
+  "item.maidtaskfilter.fisher_book": "Gift of the Sea",
+  "item.maidtaskfilter.spellblade_book": "Grimoire: First Chapter",
+  "item.maidtaskfilter.baker_book": "Sweet Workshop",
+  "item.maidtaskfilter.chef_book": "Michelin Secrets",
+  "item.maidtaskfilter.waiter_book": "Art of Service",
+  "item.maidtaskfilter.brewer_book": "Secrets of Fermentation",
+  "item.maidtaskfilter.operator_book": "Heart of the Machine",
+  "item.maidtaskfilter.omni_book": "Omni Manual",
+  "item.maidtaskfilter.omni_book.tooltip": "Creative Only - Unlocks all tasks"
+}

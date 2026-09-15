@@ -1,0 +1,35 @@
+# This is the mods.toml file for Maid Task Filter
+modLoader="javafml" #mandatory
+loaderVersion="${loader_version_range}" #mandatory
+license="${mod_license}"
+
+[[mods]] #mandatory
+modId="${mod_id}" #mandatory
+version="${mod_version}" #mandatory
+displayName="${mod_name}" #mandatory
+authors="${mod_authors}" #optional
+description='''${mod_description}'''
+
+# Forge dependency
+[[dependencies.${mod_id}]]
+    modId="forge"
+    mandatory=true
+    versionRange="${forge_version_range}"
+    ordering="NONE"
+    side="BOTH"
+
+# Minecraft dependency
+[[dependencies.${mod_id}]]
+    modId="minecraft"
+    mandatory=true
+    versionRange="${minecraft_version_range}"
+    ordering="NONE"
+    side="BOTH"
+
+# Touhou Little Maid dependency
+[[dependencies.${mod_id}]]
+    modId="touhou_little_maid"
+    mandatory=true
+    versionRange="[1.0,)"
+    ordering="NONE"
+    side="BOTH"

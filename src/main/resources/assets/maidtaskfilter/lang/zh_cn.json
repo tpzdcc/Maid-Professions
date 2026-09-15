@@ -1,0 +1,17 @@
+{
+  "itemGroup.maidtaskfilter": "女仆转职书",
+  "item.maidtaskfilter.blank_job_book": "空白转职书",
+  "item.maidtaskfilter.farmer_book": "《丰收的奥秘》",
+  "item.maidtaskfilter.rancher_book": "《牧场的呢喃》",
+  "item.maidtaskfilter.melee_book": "《守护的誓言》",
+  "item.maidtaskfilter.ranged_book": "《精准之道》",
+  "item.maidtaskfilter.fisher_book": "《大海的馈赠》",
+  "item.maidtaskfilter.spellblade_book": "《魔导书·初章》",
+  "item.maidtaskfilter.baker_book": "《甜蜜工坊》",
+  "item.maidtaskfilter.chef_book": "《米其林秘籍》",
+  "item.maidtaskfilter.waiter_book": "《待客之道》",
+  "item.maidtaskfilter.brewer_book": "《发酵的秘密》",
+  "item.maidtaskfilter.operator_book": "《机械之心》",
+  "item.maidtaskfilter.omni_book": "《全能手册》",
+  "item.maidtaskfilter.omni_book.tooltip": "创造模式限定·解锁全部任务"
+}

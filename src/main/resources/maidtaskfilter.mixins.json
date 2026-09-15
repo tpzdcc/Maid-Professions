@@ -1,0 +1,14 @@
+{
+  "required": true,
+  "minVersion": "0.8",
+  "package": "com.maidtaskfilter.mixin",
+  "refmap": "maidtaskfilter.refmap.json",
+  "target": "@env(DEFAULT)",
+  "compatibilityLevel": "JAVA_17",
+  "mixins": [
+    "TaskManagerMixin",
+    "CoinUtilsMixin"
+  ],
+  "client": [
+  ]
+}

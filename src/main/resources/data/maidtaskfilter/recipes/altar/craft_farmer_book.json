@@ -1,0 +1,27 @@
+{
+  "type": "touhou_little_maid:altar_crafting",
+  "output": {
+    "type": "minecraft:item",
+    "nbt": {
+      "Item": {
+        "id": "maidtaskfilter:farmer_book",
+        "Count": 1
+      }
+    }
+  },
+  "power": 0.2,
+  "ingredients": [
+    {
+      "item": "maidtaskfilter:blank_job_book"
+    },
+    {
+      "item": "minecraft:diamond_hoe"
+    },
+    {
+      "item": "minecraft:wheat_seeds"
+    },
+    {
+      "item": "minecraft:bone_meal"
+    }
+  ]
+}
