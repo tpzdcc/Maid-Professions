@@ -10,7 +10,13 @@ import net.minecraftforge.fml.common.Mod;
 import java.util.Set;
 
 /**
- * 任务拦截器：阻止女仆执行职业白名单之外的任务。
+ * 任务拦截器（服务端兜底层）：阻止女仆执行职业白名单之外的任务。
+ *
+ * <p>正常玩法里这道防线几乎用不上——非白名单任务在<b>界面层</b>就被过滤了：
+ * {@code TaskManagerMixin} 注入 TLM 的 {@code TaskManager.getNotHiddenTaskList}
+ * （女仆界面 GUI 唯一的任务列表数据源），任务根本没进列表、按钮根本不显示，
+ * 玩家无从点击。本类兜底的是<b>绕过界面的设置途径</b>（KubeJS 脚本、其他模组、
+ * 直接发网络包等）：服务端在任务真正落到女仆身上之前再拦一道。
  *
  * <h3>为什么是「取消事件」而不是「加启用条件说明」</h3>
  *
@@ -21,7 +27,7 @@ import java.util.Set;
  * {@code task.xxx.yyy.enable_condition.zzz}。而 jobs.json 是玩家可自由增删任务的，
  * 玩家加一个任务就会冒出一串原始 key 垃圾。所以这里改走两条更稳的路：
  * <ol>
- *   <li>{@code setCanceled(true)} —— 服务端真正拒绝设置该任务，客户端把按钮置灰</li>
+ *   <li>{@code setCanceled(true)} —— 服务端真正拒绝设置该任务（界面之外途径的兜底拦截）</li>
  *   <li>服务端给主人发一条聊天提示说明原因 —— 聊天消息可以带职业名，且完全可翻译</li>
  * </ol>
  *
@@ -30,8 +36,9 @@ import java.util.Set;
  *   <li><b>服务端</b>：{@code MaidTaskMessage} 收到 {@code post() == true} 后直接 return，
  *       后面的 {@code task.isEnable(maid)} 检查和 {@code maid.setTask(task)} 都不会执行
  *       —— 任务根本没换上，也不需要我们再拦一层。</li>
- *   <li><b>客户端</b>：{@code AbstractMaidContainerGui} 收到 {@code true} 后
- *       把该任务按钮标记为不可用（置灰）。</li>
+ *   <li><b>客户端</b>：{@code AbstractMaidContainerGui} 收到 {@code true} 后走 TLM 自己的
+ *       「不可用（置灰）」分支。但正常 UI 流程里这条分支根本到不了——该任务
+ *       早被界面层的 {@code TaskManagerMixin} 从列表源头剔除了，按钮不存在。</li>
  * </ul>
  *
  * <p>TLM 只在「目标任务不是 idle」时才发这个事件，所以「让女仆停手」永远不会被拦。
