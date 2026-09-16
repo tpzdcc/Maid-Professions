@@ -46,7 +46,7 @@ public class TaskManagerMixin {
         MaidTaskFilterMod.LOGGER.debug(
             "[MaidTaskFilter v2] Filtered tasks: {} → {} (job data: {})",
             originalList.size(), filtered.size(),
-            maid.getPersistentData().getString("maidtaskfilter_job"));
+            maid.getPersistentData().getString(MaidTaskFilterMod.JOB_KEY_FALLBACK));
 
         cir.setReturnValue(filtered);
     }

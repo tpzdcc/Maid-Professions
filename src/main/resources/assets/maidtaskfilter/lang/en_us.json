@@ -1,5 +1,6 @@
 {
   "itemGroup.maidtaskfilter": "Maid Job Books",
+
   "item.maidtaskfilter.blank_job_book": "Blank Job Change Book",
   "item.maidtaskfilter.farmer_book": "The Secrets of Harvest",
   "item.maidtaskfilter.rancher_book": "Whispers of the Pasture",
@@ -13,5 +14,51 @@
   "item.maidtaskfilter.brewer_book": "Secrets of Fermentation",
   "item.maidtaskfilter.operator_book": "Heart of the Machine",
   "item.maidtaskfilter.omni_book": "Omni Manual",
-  "item.maidtaskfilter.omni_book.tooltip": "Creative Only - Unlocks all tasks"
+
+  "maidtaskfilter.book.not_owner": "§cThis is not your maid.",
+  "maidtaskfilter.book.already_assigned": "§cThis maid is already §6[%s]§c. A Job Change Book cannot overwrite it.",
+  "maidtaskfilter.book.unknown_job": "§cUnknown job '%s'. This book is inert.",
+  "maidtaskfilter.book.assigned": "§a✓ Set maid §e%s §ato job §6[%s]",
+  "maidtaskfilter.book.omni": "§a✓ Maid §e%s §ais now §6[Omniscient]§a — every task unlocked",
+
+  "maidtaskfilter.book.tooltip.job": "§7Job: §6[%s]",
+  "maidtaskfilter.book.tooltip.tasks": "§7Allowed tasks: §f%s",
+  "maidtaskfilter.book.tooltip.omni.line1": "§dCreative mode only",
+  "maidtaskfilter.book.tooltip.omni.line2": "§7Unlocks every task, no restrictions",
+
+  "maidtaskfilter.task.no_job": "Unassigned",
+  "maidtaskfilter.task.blocked": "§c[Job Restriction] §7Your maid's job §6[%s] §7cannot do §f%s",
+
+  "maidtaskfilter.command.list.header": "§6========== Available Jobs ==========",
+  "maidtaskfilter.command.list.entry": "§e[%s§e] §7(key: %s) §f- %s §7[%s]",
+  "maidtaskfilter.command.list.tasks_count": "%s tasks",
+  "maidtaskfilter.command.list.tasks_omni": "∞ all",
+  "maidtaskfilter.command.list.footer": "§6=====================================",
+  "maidtaskfilter.command.list.hint_set": "§7Use §e/maidjob set <key> [name] §7to assign a job",
+  "maidtaskfilter.command.list.hint_info": "§7Use §e/maidjob info <key> §7for job details",
+
+  "maidtaskfilter.command.error.unknown_job": "§cUnknown job '%s'. Use /maidjob list to see every job.",
+  "maidtaskfilter.command.error.maid_not_found": "§cNo maid found nearby.",
+  "maidtaskfilter.command.error.maid_not_found_named": "§cNo maid named '%s' found nearby.",
+
+  "maidtaskfilter.command.set.success": "§a✓ Set maid §e%s §ato job §6[%s] §a(distance: %s blocks)",
+  "maidtaskfilter.command.set.allowed_tasks": "§7Allowed tasks: §f%s",
+
+  "maidtaskfilter.command.get.header": "§6========== Maid Job Info ==========",
+  "maidtaskfilter.command.get.maid": "§eMaid: §f%s §7(distance: %s blocks)",
+  "maidtaskfilter.command.get.job": "§eJob: §6[%s] §7(key: %s)",
+  "maidtaskfilter.command.get.job_none": "§eJob: §7unassigned (common tasks only)",
+  "maidtaskfilter.command.get.description": "§eDescription: §f%s",
+  "maidtaskfilter.command.get.tasks_header": "§eAllowed tasks (%s):",
+  "maidtaskfilter.command.get.task_entry": "  §a✓ §f%s",
+  "maidtaskfilter.command.get.footer": "§6====================================",
+
+  "maidtaskfilter.command.info.header": "§6========== Job Details: %s ==========",
+  "maidtaskfilter.command.info.key": "§eKey: §7%s",
+  "maidtaskfilter.command.info.icon": "§eIcon: §7%s",
+  "maidtaskfilter.command.info.description": "§eDescription: §f%s",
+  "maidtaskfilter.command.info.tasks_all": "§eAllowed tasks: §6∞ all (no restrictions)",
+  "maidtaskfilter.command.info.tasks_header": "§eAllowed tasks (%s):",
+  "maidtaskfilter.command.info.task_entry": "  §a· §f%s",
+  "maidtaskfilter.command.info.footer": "§6================================================"
 }

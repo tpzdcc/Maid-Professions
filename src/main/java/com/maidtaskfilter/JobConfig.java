@@ -64,31 +64,47 @@ public final class JobConfig {
                 if (raw.containsKey("jobs")) {
                     List<Map<String, Object>> jobsList = (List<Map<String, Object>>) raw.get("jobs");
                     if (jobsList != null) {
-                        int total = 0, skipped = 0;
-                        for (Map<String, Object> j : jobsList) {
-                            String json = GSON.toJson(j);
-                            JobDefinition job = GSON.fromJson(json, JobDefinition.class);
-                            if (job.key() == null || job.key().isEmpty()) continue;
-                            total++;
+                        int total = 0, skipped = 0, failed = 0;
+                        for (int i = 0; i < jobsList.size(); i++) {
+                            Map<String, Object> j = jobsList.get(i);
+                            // 单个职业条目出错只跳过它自己。
+                            // 不加这层的话，jobs[] 里第 5 个职业写错一个字段，整份 jobs.json
+                            // 就会从第 5 个开始全部加载失败 —— 前面的已进 JOBS，后面的一律没有。
+                            try {
+                                String json = GSON.toJson(j);
+                                JobDefinition job = GSON.fromJson(json, JobDefinition.class);
+                                if (job.key() == null || job.key().isEmpty()) continue;
+                                total++;
 
-                            // 检查 requiresMod：非空且模组未装 → 跳过
-                            String req = job.requiresMod();
-                            if (req != null && !req.isEmpty()
-                                    && !net.minecraftforge.fml.ModList.get().isLoaded(req)) {
-                                skipped++;
-                                MaidTaskFilterMod.LOGGER.info("[MaidTaskFilter v2] Job '{}' skipped: mod '{}' not installed",
-                                        job.key(), req);
-                                continue;
+                                // 检查 requiresMod：非空且模组未装 → 跳过
+                                String req = job.requiresMod();
+                                if (req != null && !req.isEmpty()
+                                        && !net.minecraftforge.fml.ModList.get().isLoaded(req)) {
+                                    skipped++;
+                                    MaidTaskFilterMod.LOGGER.info("[MaidTaskFilter v2] Job '{}' skipped: mod '{}' not installed",
+                                            job.key(), req);
+                                    continue;
+                                }
+
+                                // 合并条件任务
+                                job.mergeConditionalTasks();
+
+                                JOBS.put(job.key(), job);
+                            } catch (Exception entryError) {
+                                failed++;
+                                MaidTaskFilterMod.LOGGER.error(
+                                        "[MaidTaskFilter v2] jobs[{}] (key={}) failed to load, skipped: {}",
+                                        i, j.get("key"), entryError.toString());
                             }
-
-                            // 合并条件任务
-                            job.mergeConditionalTasks();
-
-                            JOBS.put(job.key(), job);
                         }
                         if (skipped > 0) {
                             MaidTaskFilterMod.LOGGER.info("[MaidTaskFilter v2] {} of {} jobs skipped (mod not installed)",
                                     skipped, total);
+                        }
+                        if (failed > 0) {
+                            MaidTaskFilterMod.LOGGER.warn(
+                                    "[MaidTaskFilter v2] {} job entries failed to load — check jobs.json syntax",
+                                    failed);
                         }
                     }
                 }
@@ -119,21 +135,21 @@ public final class JobConfig {
           "_readme12": "    - tasks: 职业基础任务列表（仅依赖 TLM 原版的任务放这里）",
           "_readme13": "    - conditionalTasks: 条件任务 { modId: [任务UID, ...] }。modId 安装时才注入到 tasks",
           "_readme14": "    - favorabilityBonuses: 好感度等级加成（level 0-3），支持 attribute 和 effect",
+          "_readme14b": "      ★ 同一等级要加多个加成 → 写多条 entry（level 相同即可），例如 fisher 的 level 2。",
+          "_readme14c": "        不要自造 effect2 / effectLevel2 这类字段：解析器会静默丢弃，效果不生效且不报错。",
           "_readme15": "",
           "_readme16": "  ■ 如何新增职业：在 jobs[] 末尾加一个对象，配 key/name/tasks 即可",
           "_readme17": "  ■ 如何追加任务：编辑现有职业的 tasks 数组或 conditionalTasks",
           "_readme18": "  ■ 如何追加联动：在 conditionalTasks 中添加 新模组id: [任务UID1, ...]",
-          "_readme19": "===============================================================",
+          "_readme19": "  ■ 以 _ 开头的键（_readme / _comment）只是写给人看的注释，解析时会被忽略",
+          "_readme20": "  ■ 某个职业写错了只会跳过它自己，并在日志里留一条 error，不影响其他职业",
+          "_readme21": "===============================================================",
           "commonTasks": [
             "touhou_little_maid:idle",
             "touhou_little_maid:board_games",
-            "touhou_little_maid:feed_owner"
+            "touhou_little_maid:feed"
           ],
-          "conditionalCommonTasks": {
-            "maid_bakeries": [
-              "maid_bakeries:eat_cake"
-            ]
-          },
+          "conditionalCommonTasks": {},
           "jobs": [
             {
               "_comment": "====== 核心职业：纯 TLM 无需额外模组 ======",
@@ -211,7 +227,7 @@ public final class JobConfig {
               "icon": "minecraft:bow",
               "description": "远程射手，弓弩为主，安装枪械模组后追加枪击",
               "tasks": [
-                "touhou_little_maid:bow_attack",
+                "touhou_little_maid:ranged_attack",
                 "touhou_little_maid:crossbow_attack"
               ],
               "conditionalTasks": {
@@ -340,10 +356,10 @@ public final class JobConfig {
               "key": "brewer",
               "name": "踩得一脚好果汁的酿造小女仆",
               "icon": "minecraft:glass_bottle",
-              "description": "负责踩踏酿造果汁酒品，需安装狐步酿香",
-              "requiresMod": "fox_trot_brew",
+              "description": "负责踩踏酿造果汁酒品，需安装森罗物语：兼容（kaleidoscope_compat）",
+              "requiresMod": "kaleidoscope_compat",
               "tasks": [
-                "fox_trot_brew:pressing_tub"
+                "kaleidoscope_compat:pressing_tub"
               ],
               "assignmentItem": "maidtaskfilter:brewer_book",
               "recipeItems": [
@@ -373,7 +389,8 @@ public final class JobConfig {
               ],
               "favorabilityBonuses": [
                 { "level": 1, "effect": "minecraft:haste", "effectLevel": 0 },
-                { "level": 2, "effect": "minecraft:haste", "effectLevel": 0, "effect2": "minecraft:strength", "effectLevel2": 0 },
+                { "level": 2, "effect": "minecraft:haste", "effectLevel": 0 },
+                { "level": 2, "effect": "minecraft:strength", "effectLevel": 0 },
                 { "level": 3, "effect": "minecraft:haste", "effectLevel": 1 }
               ]
             },

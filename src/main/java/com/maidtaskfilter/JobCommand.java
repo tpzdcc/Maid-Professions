@@ -23,11 +23,10 @@ import java.util.List;
  *   <li>{@code /maidjob get [女仆名字]} —— 查看女仆的当前职业</li>
  *   <li>{@code /maidjob info <职业key>} —— 查看职业详情及允许的任务列表</li>
  * </ul>
+ *
+ * <p>权限等级 2（op 级），在 {@link #register} 里统一声明。
  */
 public final class JobCommand {
-
-    /** 搜索附近女仆的半径（格） */
-    private static final int SEARCH_RANGE = 16;
 
     private JobCommand() {}
 
@@ -42,6 +41,10 @@ public final class JobCommand {
     public static void register(CommandDispatcher<CommandSourceStack> dispatcher) {
         dispatcher.register(
             Commands.literal("maidjob")
+                // 权限等级 2（op 级）—— 与 TLM 本体 /tlm、本包 /ddmaid 一致。
+                // 不加这行 → Brigadier 默认谓词是 s -> true → 任何玩家可执行
+                // /maidjob set <任意职业>，把别人女仆改成 omni 免费解锁全部任务。
+                .requires(src -> src.hasPermission(2))
                 // /maidjob list
                 .then(Commands.literal("list")
                     .executes(ctx -> cmdList(ctx.getSource())))
@@ -75,17 +78,18 @@ public final class JobCommand {
     /** /maidjob list —— 列出所有职业 */
     private static int cmdList(CommandSourceStack src) {
         Collection<JobDefinition> jobs = JobConfig.getAllJobs();
-        send(src, "§6========== 可用职业列表 ==========");
+        send(src, Component.translatable("maidtaskfilter.command.list.header"));
         for (JobDefinition job : jobs) {
-            String taskCount = "omni".equals(job.key())
-                    ? "∞ 全部" : (job.tasks().size() + " 个任务");
-            send(src, "§e[" + job.name() + "§e] §7(key: " + job.key()
-                    + ") §f- " + job.description()
-                    + " §7[" + taskCount + "]");
+            Component taskCount = MaidTaskFilterMod.OMNI_JOB_KEY.equals(job.key())
+                    ? Component.translatable("maidtaskfilter.command.list.tasks_omni")
+                    : Component.translatable("maidtaskfilter.command.list.tasks_count",
+                            job.tasks().size());
+            send(src, Component.translatable("maidtaskfilter.command.list.entry",
+                    job.name(), job.key(), job.description(), taskCount));
         }
-        send(src, "§6=====================================");
-        send(src, "§7使用 §e/maidjob set <key> [名字] §7为女仆分配职业");
-        send(src, "§7使用 §e/maidjob info <key> §7查看职业详情");
+        send(src, Component.translatable("maidtaskfilter.command.list.footer"));
+        send(src, Component.translatable("maidtaskfilter.command.list.hint_set"));
+        send(src, Component.translatable("maidtaskfilter.command.list.hint_info"));
         return 1;
     }
 
@@ -96,14 +100,14 @@ public final class JobCommand {
         // 验证职业是否存在
         JobDefinition job = JobConfig.getJob(jobKey);
         if (job == null) {
-            send(src, "§c未知职业 '" + jobKey + "'。使用 /maidjob list 查看所有职业。");
+            send(src, Component.translatable("maidtaskfilter.command.error.unknown_job", jobKey));
             return 0;
         }
 
         // 查找目标女仆
         EntityMaid maid = findNearestMaid(player, maidName);
         if (maid == null) {
-            send(src, "§c附近未找到" + (maidName.isEmpty() ? "女仆。" : "名字包含 '" + maidName + "' 的女仆。"));
+            send(src, maidNotFound(maidName));
             return 0;
         }
 
@@ -111,9 +115,10 @@ public final class JobCommand {
         MaidTaskFilterMod.setJobData(maid, jobKey, job.tasksAsString());
 
         double dist = player.distanceTo(maid);
-        send(src, "§a✓ 已将女仆 §e" + maid.getName().getString()
-                + " §a的职业设置为 §6[" + job.name() + "] §a（距离: " + Math.round(dist) + " 格）");
-        send(src, "§7允许的任务: §f" + String.join(", ", job.tasks()));
+        send(src, Component.translatable("maidtaskfilter.command.set.success",
+                maid.getName().getString(), job.name(), Math.round(dist)));
+        send(src, Component.translatable("maidtaskfilter.command.set.allowed_tasks",
+                String.join(", ", job.tasks())));
         return 1;
     }
 
@@ -123,28 +128,35 @@ public final class JobCommand {
 
         EntityMaid maid = findNearestMaid(player, maidName);
         if (maid == null) {
-            send(src, "§c附近未找到" + (maidName.isEmpty() ? "女仆。" : "名字包含 '" + maidName + "' 的女仆。"));
+            send(src, maidNotFound(maidName));
             return 0;
         }
 
         String jobKey = MaidTaskFilterMod.getJobKey(maid);
-        if (jobKey.isEmpty()) jobKey = "idle";
-        JobDefinition job = JobConfig.getJob(jobKey);
-        String jobName = job != null ? job.name() : "未知";
+        JobDefinition job = jobKey.isEmpty() ? null : JobConfig.getJob(jobKey);
         double dist = player.distanceTo(maid);
 
-        send(src, "§6========== 女仆职业信息 ==========");
-        send(src, "§e女仆: §f" + maid.getName().getString()
-                + " §7(距离: " + Math.round(dist) + " 格)");
-        send(src, "§e职业: §6[" + jobName + "] §7(key: " + jobKey + ")");
+        send(src, Component.translatable("maidtaskfilter.command.get.header"));
+        send(src, Component.translatable("maidtaskfilter.command.get.maid",
+                maid.getName().getString(), Math.round(dist)));
+        if (jobKey.isEmpty()) {
+            // 没有职业数据 —— 之前这里会硬填 "idle"，然后查不到职业，显示成「未知」，误导管理员
+            send(src, Component.translatable("maidtaskfilter.command.get.job_none"));
+        } else {
+            // 职业 key 存在但 jobs.json 里找不到（职业被删了 / requiresMod 未装）→ 直接显示 key
+            send(src, Component.translatable("maidtaskfilter.command.get.job",
+                    job != null ? job.name() : jobKey, jobKey));
+        }
         if (job != null) {
-            send(src, "§e描述: §f" + job.description());
-            send(src, "§e允许的任务 (" + job.tasks().size() + " 个):");
+            send(src, Component.translatable("maidtaskfilter.command.get.description",
+                    job.description()));
+            send(src, Component.translatable("maidtaskfilter.command.get.tasks_header",
+                    job.tasks().size()));
             for (String t : job.tasks()) {
-                send(src, "  §a✓ §f" + t);
+                send(src, Component.translatable("maidtaskfilter.command.get.task_entry", t));
             }
         }
-        send(src, "§6====================================");
+        send(src, Component.translatable("maidtaskfilter.command.get.footer"));
         return 1;
     }
 
@@ -152,22 +164,24 @@ public final class JobCommand {
     private static int cmdInfo(CommandSourceStack src, String jobKey) {
         JobDefinition job = JobConfig.getJob(jobKey);
         if (job == null) {
-            send(src, "§c未知职业 '" + jobKey + "'。使用 /maidjob list 查看所有职业。");
+            send(src, Component.translatable("maidtaskfilter.command.error.unknown_job", jobKey));
             return 0;
         }
-        send(src, "§6========== 职业详情: " + job.name() + " ==========");
-        send(src, "§eKey: §7" + job.key());
-        send(src, "§e图标: §7" + job.icon());
-        send(src, "§e描述: §f" + job.description());
-        if ("omni".equals(jobKey)) {
-            send(src, "§e允许的任务: §6∞ 全部（不做任何限制）");
+        send(src, Component.translatable("maidtaskfilter.command.info.header", job.name()));
+        send(src, Component.translatable("maidtaskfilter.command.info.key", job.key()));
+        send(src, Component.translatable("maidtaskfilter.command.info.icon", job.icon()));
+        send(src, Component.translatable("maidtaskfilter.command.info.description",
+                job.description()));
+        if (MaidTaskFilterMod.OMNI_JOB_KEY.equals(jobKey)) {
+            send(src, Component.translatable("maidtaskfilter.command.info.tasks_all"));
         } else {
-            send(src, "§e允许的任务 (" + job.tasks().size() + " 个):");
+            send(src, Component.translatable("maidtaskfilter.command.info.tasks_header",
+                    job.tasks().size()));
             for (String t : job.tasks()) {
-                send(src, "  §a· §f" + t);
+                send(src, Component.translatable("maidtaskfilter.command.info.task_entry", t));
             }
         }
-        send(src, "§6================================================");
+        send(src, Component.translatable("maidtaskfilter.command.info.footer"));
         return 1;
     }
 
@@ -175,8 +189,16 @@ public final class JobCommand {
     // 辅助方法
     // ================================================================
 
+    /** 「附近没找到女仆」的两种说法 */
+    private static Component maidNotFound(String maidName) {
+        return maidName.isEmpty()
+                ? Component.translatable("maidtaskfilter.command.error.maid_not_found")
+                : Component.translatable("maidtaskfilter.command.error.maid_not_found_named",
+                        maidName);
+    }
+
     /**
-     * 在玩家周围 {@link #SEARCH_RANGE} 格内查找最近的 EntityMaid。
+     * 在玩家周围 {@link MaidTaskFilterConfig#commandSearchRange()} 格内查找最近的 EntityMaid。
      *
      * 名字匹配规则（nameFilter 非空时）：
      * <ol>
@@ -186,7 +208,8 @@ public final class JobCommand {
      * 建议用命名牌给女仆起名后再分配职业，避免模型变更后找不到。
      */
     private static EntityMaid findNearestMaid(ServerPlayer player, String nameFilter) {
-        AABB area = player.getBoundingBox().inflate(SEARCH_RANGE);
+        int range = MaidTaskFilterConfig.commandSearchRange();
+        AABB area = player.getBoundingBox().inflate(range);
         List<Entity> entities = player.level().getEntities(player, area,
                 e -> e instanceof EntityMaid);
 
@@ -213,7 +236,7 @@ public final class JobCommand {
     }
 
     /** 向指令执行者发送消息 */
-    private static void send(CommandSourceStack src, String msg) {
-        src.sendSuccess(() -> Component.literal(msg), false);
+    private static void send(CommandSourceStack src, Component msg) {
+        src.sendSuccess(() -> msg, false);
     }
 }

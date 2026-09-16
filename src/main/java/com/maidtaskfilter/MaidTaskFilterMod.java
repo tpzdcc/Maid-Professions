@@ -4,12 +4,15 @@ import com.github.tartaricacid.touhoulittlemaid.api.entity.data.TaskDataKey;
 import com.github.tartaricacid.touhoulittlemaid.entity.data.TaskDataRegister;
 import com.github.tartaricacid.touhoulittlemaid.entity.passive.EntityMaid;
 import net.minecraft.resources.ResourceLocation;
-import net.minecraft.world.entity.ai.attributes.Attribute;
-import net.minecraft.world.entity.ai.attributes.AttributeModifier;
 import net.minecraft.world.effect.MobEffect;
 import net.minecraft.world.effect.MobEffectInstance;
+import net.minecraft.world.entity.ai.attributes.Attribute;
+import net.minecraft.world.entity.ai.attributes.AttributeInstance;
+import net.minecraft.world.entity.ai.attributes.AttributeModifier;
 import net.minecraftforge.eventbus.api.IEventBus;
+import net.minecraftforge.fml.ModLoadingContext;
 import net.minecraftforge.fml.common.Mod;
+import net.minecraftforge.fml.config.ModConfig;
 import net.minecraftforge.fml.javafmlmod.FMLJavaModLoadingContext;
 import net.minecraftforge.registries.ForgeRegistries;
 import org.apache.logging.log4j.LogManager;
@@ -22,26 +25,23 @@ import java.util.*;
  *
  * <h3>核心机制</h3>
  * <ul>
- *   <li>新女仆默认空闲，只能做通用任务</li>
+ *   <li>新女仆默认空闲，只能做通用任务（可用配置项 {@code restrictUnassignedMaid} 关掉）</li>
  *   <li>手持转职书右键女仆 → 消耗道具 → 赋予职业</li>
  *   <li>职业绑定 TLM 好感度系统，好感度提升自动获得职业加成</li>
- *   <li>/maidjob 指令保留作为管理员工具</li>
+ *   <li>/maidjob 指令保留作为管理员工具（权限等级 2）</li>
  * </ul>
  *
  * <h3>数据流</h3>
  * <pre>
  *   玩家右键女仆 → JobBookItem.interactLivingEntity
- *     → setJobTasks(maid, job.tasksAsString())
- *     → persistentData.putString("maidtaskfilter_job", jobKey)
+ *     → setJobData(maid, job.key(), job.tasksAsString())
  *     → applyJobBonuses(maid, job)
  *   ↓
- *   好感度变化 → MaidFavorabilityLevelChangeEvent
- *     → onFavorabilityChange(event)
+ *   好感度变化 → MaidFavorabilityLevelChangeEvent → onFavorabilityChanged
  *     → applyJobBonuses(maid, job)      [重新计算]
  *   ↓
  *   客户端 UI → TaskManagerMixin.getNotHiddenTaskList
- *     → getAllAllowedTasks(jobKey)      [通用任务 + 职业独占任务]
- *     → 过滤显示
+ *     → getAllAllowedTasks(maid)        [通用任务 + 职业独占任务]
  * </pre>
  */
 @Mod(MaidTaskFilterMod.MOD_ID)
@@ -50,6 +50,18 @@ public class MaidTaskFilterMod {
     public static final String MOD_ID = "maidtaskfilter";
     public static final Logger LOGGER = LogManager.getLogger();
 
+    /**
+     * 全能职业的保留 key —— 任务过滤见到它就放行（返回空集合 = 不过滤）。
+     *
+     * <p>这是**内部哨兵值，不是用户偏好**，所以刻意不做成配置项：
+     * 做成配置只会多一种「和 jobs.json 里的职业 key 对不上」的坏法。
+     * 它必须与 {@code jobs.json} 里那个 {@code "key": "omni"} 的职业一致。
+     */
+    public static final String OMNI_JOB_KEY = "omni";
+
+    /** 职业 key 的 persistentData 备份键（KubeJS 直写时只有它，TaskData 同步是后补的） */
+    public static final String JOB_KEY_FALLBACK = "maidtaskfilter_job";
+
     private static final ResourceLocation JOB_TASKS_KEY_ID =
             new ResourceLocation(MOD_ID, "job_tasks");
     private static TaskDataKey<TaskData> JOB_TASKS_KEY = null;
@@ -57,11 +69,21 @@ public class MaidTaskFilterMod {
     /** 用于追踪已应用的好感度等级，避免重复施加 */
     private static final String FAV_TRACK_KEY = "maidtaskfilter_fav_level";
 
+    /**
+     * 记录「我们往这只女仆身上施加过哪些药水效果」—— 逗号分隔的效果 ID。
+     *
+     * <p>清除时按这份清单**精确移除**，而不是靠「无限时长 + 不可见」这类特征去猜。
+     * 特征式匹配会误删别的模组给的永久效果，而且只要配置里写了白名单外的效果就永远清不掉。
+     */
+    private static final String APPLIED_EFFECTS_KEY = "maidtaskfilter_applied_effects";
+
     public MaidTaskFilterMod() {
         IEventBus bus = FMLJavaModLoadingContext.get().getModEventBus();
         ModItems.ITEMS.register(bus);
         ModItems.TABS.register(bus);
         bus.register(new MaidTaskFilterEventHandler());
+        // 行为开关 → config/maidtaskfilter-common.toml（首次启动自动生成）
+        ModLoadingContext.get().registerConfig(ModConfig.Type.COMMON, MaidTaskFilterConfig.SPEC);
         LOGGER.info("[MaidTaskFilter v2] 女仆职业系统已加载");
     }
 
@@ -80,7 +102,7 @@ public class MaidTaskFilterMod {
         if (JOB_TASKS_KEY == null) return;
         maid.setAndSyncData(JOB_TASKS_KEY, new TaskData(tasks, jobKey));
         // 同时存 persistentData 作为备份（服务端查询用）
-        maid.getPersistentData().putString("maidtaskfilter_job", jobKey);
+        maid.getPersistentData().putString(JOB_KEY_FALLBACK, jobKey);
     }
 
     /** 读取任务白名单（两端均可调用） */
@@ -96,7 +118,7 @@ public class MaidTaskFilterMod {
         TaskData data = maid.getData(JOB_TASKS_KEY);
         if (data != null && !data.jobKey().isEmpty()) return data.jobKey();
         // TaskData 无职业 → 回退到 persistentData（兼容 KubeJS 直写）
-        String fbJobKey = maid.getPersistentData().getString("maidtaskfilter_job");
+        String fbJobKey = maid.getPersistentData().getString(JOB_KEY_FALLBACK);
         // 自修复仅在服务端：客户端 setAndSyncData 会抛异常
         if (!fbJobKey.isEmpty() && data != null && !maid.level().isClientSide()) {
             JobDefinition job = JobConfig.getJob(fbJobKey);
@@ -112,17 +134,26 @@ public class MaidTaskFilterMod {
 
     /**
      * 获取女仆所有允许执行的任务（通用 + 职业独占）。
-     * 如果未分配职业 → 仅 idle。全能手册（omni）→ 空集合 = 不过滤。
+     *
+     * <p><b>返回空集合 = 不过滤</b>（调用方按这个约定处理）。三种情况返回空集合：
+     * <ol>
+     *   <li>全能手册（{@link #OMNI_JOB_KEY}）—— 设计上就是全部解锁</li>
+     *   <li>未转职的女仆 + 配置项 {@code restrictUnassignedMaid = false} —— 用户主动关掉了限制</li>
+     * </ol>
+     *
+     * <p>未转职且限制开启（默认）→ 只允许 {@code touhou_little_maid:idle}。
      */
     public static Set<String> getAllAllowedTasks(EntityMaid maid) {
         String tasksStr = getJobTasks(maid);
         String jobKey = getJobKey(maid);
 
         // 全能手册：不过滤
-        if ("omni".equals(jobKey)) return Collections.emptySet();
+        if (OMNI_JOB_KEY.equals(jobKey)) return Collections.emptySet();
 
-        // 未转职（无职业数据）→ 仅允许 idle
+        // 未转职（无职业数据）
         if (jobKey.isEmpty() && tasksStr.isEmpty()) {
+            // 配置关掉了限制 → 不过滤，新女仆什么都能干
+            if (!MaidTaskFilterConfig.restrictUnassignedMaid()) return Collections.emptySet();
             return Collections.singleton("touhou_little_maid:idle");
         }
 
@@ -157,58 +188,101 @@ public class MaidTaskFilterMod {
         // 先清除旧加成
         clearJobBonuses(maid);
 
+        Set<String> appliedEffects = new LinkedHashSet<>();
         for (FavorabilityBonus bonus : bonuses) {
             // 属性修正
             if (bonus.hasAttribute()) {
                 applyAttributeBonus(maid, bonus);
             }
             // 药水效果（永久）
-            if (bonus.hasEffect()) {
-                applyEffectBonus(maid, bonus);
+            if (bonus.hasEffect() && applyEffectBonus(maid, bonus)) {
+                appliedEffects.add(bonus.effect());
             }
         }
 
+        // 记下实际施加上去的效果 —— clearJobBonuses 靠这份清单精确移除
+        maid.getPersistentData().putString(APPLIED_EFFECTS_KEY,
+                String.join(",", appliedEffects));
         // 记录已应用的好感度等级
         maid.getPersistentData().putInt(FAV_TRACK_KEY, favLevel);
     }
 
-    /** 清除女仆的所有职业加成 */
+    /**
+     * 清除女仆的所有职业加成。
+     *
+     * <p><b>属性</b>：{@link #JOB_BONUS_UUID} 是本模组专用的固定 UUID，
+     * 所以直接遍历**全部已注册属性**逐个摘 —— 配置里写任何属性都清得掉。
+     * （旧版只遍历 4 条硬编码属性名，配置写了表外的属性就永远留一份永久加成。）
+     * 属性总数约 40（原版 + 各模组），调用只发生在转职 / 好感度变化时，开销可忽略。
+     *
+     * <p><b>效果</b>：按 {@link #APPLIED_EFFECTS_KEY} 记下的清单精确移除。
+     * 旧版按「无限时长 + 不可见」扫 8 个硬编码效果，既漏（表外效果清不掉）
+     * 又可能误伤（别的模组给的永久效果长得一模一样）。
+     */
     public static void clearJobBonuses(EntityMaid maid) {
-        // 清除属性修正
-        for (String attrId : KNOWN_ATTRIBUTES) {
-            Attribute attr = ForgeRegistries.ATTRIBUTES.getValue(new ResourceLocation(attrId));
-            if (attr != null) {
-                maid.getAttribute(attr).removeModifier(JOB_BONUS_UUID);
+        // ① 属性修正：遍历全部已注册属性
+        for (Attribute attr : ForgeRegistries.ATTRIBUTES) {
+            AttributeInstance instance = maid.getAttribute(attr);
+            if (instance != null) {
+                instance.removeModifier(JOB_BONUS_UUID);
             }
         }
-        // 清除永久药水效果
-        for (String effectId : KNOWN_EFFECTS) {
+
+        // ② 药水效果：按记录精确移除
+        for (String effectId : readAppliedEffects(maid)) {
             MobEffect effect = ForgeRegistries.MOB_EFFECTS.getValue(new ResourceLocation(effectId));
             if (effect != null && maid.hasEffect(effect)) {
-                // 只移除我们施加的（无限时长、环境来源的效果）
-                MobEffectInstance instance = maid.getEffect(effect);
-                if (instance != null && instance.isInfiniteDuration() && !instance.isVisible()) {
-                    maid.removeEffect(effect);
-                }
+                maid.removeEffect(effect);
             }
         }
+
+        // ③ 兜底：记录机制上线前转职的老女仆没有清单，按旧白名单 + 特征扫一遍。
+        //    只为老存档迁移而留，新转职的女仆走 ② 就够了。
+        clearLegacyEffects(maid);
+
+        maid.getPersistentData().remove(APPLIED_EFFECTS_KEY);
         maid.getPersistentData().remove(FAV_TRACK_KEY);
     }
 
     // ---- 内部实现 ----
 
+    /** 职业加成的固定 UUID —— 全模组共用一个，所以「移除同 UUID」就是「移除职业加成」 */
     private static final UUID JOB_BONUS_UUID = UUID.fromString("c8f7d3a1-5e2b-4f9c-a6d8-1b3e5f7a9c2d");
-    private static final List<String> KNOWN_ATTRIBUTES = List.of(
-            "minecraft:generic.attack_damage",
-            "minecraft:generic.armor",
-            "minecraft:generic.movement_speed",
-            "minecraft:generic.attack_speed"
-    );
-    private static final List<String> KNOWN_EFFECTS = List.of(
+
+    /**
+     * 旧版（记录机制上线前）按硬编码白名单清理效果时用的候选集。
+     *
+     * <p><b>只用于老存档兜底</b>，不要往这里加东西 —— 新增效果应当由
+     * {@link #applyJobBonuses} 自动记进 {@link #APPLIED_EFFECTS_KEY}。
+     */
+    private static final List<String> LEGACY_KNOWN_EFFECTS = List.of(
             "minecraft:haste", "minecraft:luck", "minecraft:strength",
             "minecraft:resistance", "minecraft:speed", "minecraft:water_breathing",
             "minecraft:night_vision", "minecraft:regeneration"
     );
+
+    /** 读取「我们施加过哪些效果」的清单，无记录时返回空列表 */
+    private static List<String> readAppliedEffects(EntityMaid maid) {
+        String raw = maid.getPersistentData().getString(APPLIED_EFFECTS_KEY);
+        if (raw.isEmpty()) return Collections.emptyList();
+        List<String> result = new ArrayList<>();
+        for (String id : raw.split(",")) {
+            if (!id.isEmpty()) result.add(id);
+        }
+        return result;
+    }
+
+    /** 老存档兜底：按旧白名单 + 「无限时长 + 不可见」特征清除效果 */
+    private static void clearLegacyEffects(EntityMaid maid) {
+        for (String effectId : LEGACY_KNOWN_EFFECTS) {
+            MobEffect effect = ForgeRegistries.MOB_EFFECTS.getValue(new ResourceLocation(effectId));
+            if (effect == null || !maid.hasEffect(effect)) continue;
+            MobEffectInstance instance = maid.getEffect(effect);
+            if (instance != null && instance.isInfiniteDuration() && !instance.isVisible()) {
+                maid.removeEffect(effect);
+            }
+        }
+    }
 
     private static void applyAttributeBonus(EntityMaid maid, FavorabilityBonus bonus) {
         Attribute attr = ForgeRegistries.ATTRIBUTES.getValue(new ResourceLocation(bonus.attribute()));
@@ -216,7 +290,7 @@ public class MaidTaskFilterMod {
             LOGGER.warn("[MaidTaskFilter] Unknown attribute: {}", bonus.attribute());
             return;
         }
-        var instance = maid.getAttribute(attr);
+        AttributeInstance instance = maid.getAttribute(attr);
         if (instance == null) return;
         // 移除旧的同 UUID 修正后再加新的
         instance.removeModifier(JOB_BONUS_UUID);
@@ -225,19 +299,21 @@ public class MaidTaskFilterMod {
                         bonus.value(), AttributeModifier.Operation.ADDITION));
     }
 
-    private static void applyEffectBonus(EntityMaid maid, FavorabilityBonus bonus) {
+    /** @return 是否真的施加了（效果 ID 无效时返回 false，就不会被记进清单） */
+    private static boolean applyEffectBonus(EntityMaid maid, FavorabilityBonus bonus) {
         MobEffect effect = ForgeRegistries.MOB_EFFECTS.getValue(new ResourceLocation(bonus.effect()));
         if (effect == null) {
             LOGGER.warn("[MaidTaskFilter] Unknown effect: {}", bonus.effect());
-            return;
+            return false;
         }
         // 永久效果：duration = -1, ambient = true, visible = false（不显示粒子）
         maid.addEffect(new MobEffectInstance(effect, -1, bonus.effectLevel(), true, false));
+        return true;
     }
 
     /** 检查好感度变化并重新应用加成 */
     public static void onFavorabilityChanged(EntityMaid maid) {
-        String jobKey = maid.getPersistentData().getString("maidtaskfilter_job");
+        String jobKey = maid.getPersistentData().getString(JOB_KEY_FALLBACK);
         if (jobKey.isEmpty()) return;
 
         int trackedLevel = maid.getPersistentData().getInt(FAV_TRACK_KEY);

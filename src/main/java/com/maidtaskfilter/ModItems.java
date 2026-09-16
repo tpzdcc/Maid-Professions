@@ -38,7 +38,7 @@ public final class ModItems {
 
     /** 全能手册 —— 创造模式限定 */
     public static final RegistryObject<JobBookItem> OMNI_BOOK = ITEMS.register("omni_book",
-            () -> new JobBookItem("omni"));
+            () -> new JobBookItem(MaidTaskFilterMod.OMNI_JOB_KEY));
 
     // ---- 创造模式标签页 ----
 
@@ -67,23 +67,4 @@ public final class ModItems {
                     .build());
 
     private ModItems() {}
-
-    /** 根据职业 key 获取对应的注册物品 */
-    public static RegistryObject<? extends Item> getBookForJob(String jobKey) {
-        return switch (jobKey) {
-            case "farmer"    -> FARMER_BOOK;
-            case "rancher"   -> RANCHER_BOOK;
-            case "melee"     -> MELEE_BOOK;
-            case "ranged"    -> RANGED_BOOK;
-            case "fisher"    -> FISHER_BOOK;
-            case "spellblade" -> SPELLBLADE_BOOK;
-            case "baker"     -> BAKER_BOOK;
-            case "chef"      -> CHEF_BOOK;
-            case "waiter"    -> WAITER_BOOK;
-            case "brewer"    -> BREWER_BOOK;
-            case "operator"  -> OPERATOR_BOOK;
-            case "omni"      -> OMNI_BOOK;
-            default          -> null;
-        };
-    }
 }
