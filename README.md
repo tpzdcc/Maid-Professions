@@ -13,6 +13,7 @@
 - **好感度加成**：绑定 TLM 好感度系统（0–3 级）。转职 / 好感度升级时自动重算：属性修正（固定 UUID，安全清除）+ 永久药水效果（精确记录、按清单清除，不误伤其他模组）。
 - **管理员指令 `/maidjob`**：权限等级 2（op 级），列表 / 分配 / 查询 / 详情四组子命令。
 - **数据驱动职业**：职业定义全部在 `config/maidtaskfilter/jobs.json`，改完重启即生效，无需重新编译。
+- **tag 转职书（数据包扩展通道）**：照搬 TLM 驯服物品「物品标签」的做法（`touhou_little_maid:maid_tamed_item`）——**任意物品放进 tag `maidtaskfilter:job_<职业key>` 就成了该职业的转职书**。新增转职书零编译：jobs.json 加职业 + KubeJS 注册物品 + 数据包 tag，三步完成（见「自定义职业」方案 B）。
 
 ## 依赖
 
@@ -168,9 +169,60 @@ maidspell:spell_combat / spell_combat_far / spell_combat_melee  万法皆通（�
 
 3. 重启服务器 → `/maidjob list` 可见 → `/maidjob set lumberjack` 分配。
 
-### 方案 B：给新职业配转职书物品（需要改源码重新编译）
+（想要人手一本的转职书物品 → 看方案 B / C。）
 
-`jobs.json` 里的 `assignmentItem` / `recipeItems` 字段**只是说明性数据，不会自动生成物品和配方**。要一本真正能用的转职书，需要三步：
+### 方案 B：tag 转职书（零编译，推荐）
+
+机制与 TLM 的驯服物标签（`touhou_little_maid:maid_tamed_item`）同款：
+**物品标签 `maidtaskfilter:job_<职业key>` 里的任何物品，右键女仆即可转成该职业。**
+
+`jobs.json` 里的 `assignmentItem` / `recipeItems` 字段**只是说明性数据，不会自动生成物品和配方**，因此完整流程四步，全部零编译：
+
+1. **jobs.json 加职业**（同方案 A）
+
+2. **注册物品**（KubeJS，`startup_scripts/` 下新建脚本）：
+
+```js
+// startup_scripts/job_books.js
+StartupEvents.registry('item', event => {
+    event.create('kubejs:lumberjack_book')
+        .displayName('伐木手册')
+        .parentModel('minecraft:item/book') // 复用原版书贴图
+})
+```
+
+（CraftTweaker 注册物品等其他方式同理——只要物品有个 ID 就行。）
+
+3. **数据包加 tag**（`data/maidtaskfilter/tags/items/job_lumberjack.json`，在你的数据包或 KubeJS `data/` 目录里）：
+
+```json
+{
+  "values": ["kubejs:lumberjack_book"]
+}
+```
+
+4. **祭坛配方**（可选，`data/maidtaskfilter/recipes/altar/craft_lumberjack_book.json`，类型照抄现有配方）：
+
+```jsonc
+{
+  "type": "touhou_little_maid:altar_crafting",
+  "output": { "type": "minecraft:item", "nbt": { "Item": { "id": "kubejs:lumberjack_book", "Count": 1 } } },
+  "power": 0.2,
+  "ingredients": [
+    { "item": "maidtaskfilter:blank_job_book" },
+    { "item": "minecraft:iron_axe" }
+  ]
+}
+```
+
+> tag 命中优先于物品本身：内置 12 本书默认**不在**任何 `job_*` tag 里（走物品类路径）。
+> 若你把某内置书写进别的 `job_*` tag，会以 tag 指定的职业为准。
+
+### 方案 C：改源码（深度定制才需要）
+
+tag 通道覆盖「新职业配新物品」的绝大多数需求。**只有当你要做 tag 做不到的事**
+（如转职书带特殊 tooltip 逻辑、右键女仆之外的新交互、注册进本模组创造标签页等），
+才需要改源码重新编译：
 
 1. **注册物品**（`ModItems.java`）：
 
@@ -187,19 +239,7 @@ public static final RegistryObject<JobBookItem> LUMBERJACK_BOOK =
 "item.maidtaskfilter.lumberjack_book": "伐木手册"
 ```
 
-3. **加祭坛配方**（`data/maidtaskfilter/recipes/altar/craft_lumberjack_book.json`，仿照现有文件）：
-
-```jsonc
-{
-  "type": "touhou_little_maid:altar_crafting",
-  "output": { "type": "minecraft:item", "nbt": { "Item": { "id": "maidtaskfilter:lumberjack_book", "Count": 1 } } },
-  "power": 0.2,
-  "ingredients": [
-    { "item": "maidtaskfilter:blank_job_book" },
-    { "item": "minecraft:iron_axe" }
-  ]
-}
-```
+3. **加祭坛配方**（`data/maidtaskfilter/recipes/altar/craft_lumberjack_book.json`，同上）。
 
 然后 `./gradlew build`，把新 jar 放回 `mods/`。
 
@@ -254,7 +294,8 @@ src/main/java/com/maidtaskfilter/
 ├── JobConfig.java                # jobs.json 加载（含默认模板）
 ├── JobDefinition.java            # 职业定义 POJO
 ├── FavorabilityBonus.java        # 好感度加成 POJO
-├── JobBookItem.java              # 转职书物品逻辑
+├── JobBookItem.java              # 转职书物品（内置 12 本）
+├── TagJobBookHandler.java        # tag 转职书通道（job_<key> 物品标签 → 转职）
 ├── JobCommand.java               # /maidjob 指令
 ├── ForgeEventHandler.java        # 指令注册、配置加载、好感度变化
 ├── MaidTaskEnableHandler.java    # 任务拦截（取消事件 + 聊天提示）

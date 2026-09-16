@@ -3,12 +3,16 @@ package com.maidtaskfilter;
 import com.github.tartaricacid.touhoulittlemaid.api.entity.data.TaskDataKey;
 import com.github.tartaricacid.touhoulittlemaid.entity.data.TaskDataRegister;
 import com.github.tartaricacid.touhoulittlemaid.entity.passive.EntityMaid;
+import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.world.InteractionResult;
 import net.minecraft.world.effect.MobEffect;
 import net.minecraft.world.effect.MobEffectInstance;
 import net.minecraft.world.entity.ai.attributes.Attribute;
 import net.minecraft.world.entity.ai.attributes.AttributeInstance;
 import net.minecraft.world.entity.ai.attributes.AttributeModifier;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.item.ItemStack;
 import net.minecraftforge.eventbus.api.IEventBus;
 import net.minecraftforge.fml.ModLoadingContext;
 import net.minecraftforge.fml.common.Mod;
@@ -171,6 +175,91 @@ public class MaidTaskFilterMod {
         }
 
         return allowed;
+    }
+
+    // ---- 转职逻辑（JobBookItem 与 tag 转职书共用）----
+
+    /**
+     * 转职书生效逻辑的单一入口。
+     *
+     * <p>两个调用方：
+     * <ol>
+     *   <li>{@link JobBookItem#interactLivingEntity} —— 内置 12 本转职书（物品类自带行为）</li>
+     *   <li>{@link TagJobBookHandler} —— 数据包 tag {@code maidtaskfilter:job_<key>}
+     *       通道（任意物品放进 tag 即成转职书，零编译扩展）</li>
+     * </ol>
+     *
+     * <p>顺序：所有权 → 覆盖门禁（{@code allowJobOverwrite}）→ 应用职业 →
+     * 消耗（创造模式不消耗；{@code consumeJobBook=false} 不消耗）。
+     * 拒绝时返回 {@link InteractionResult#FAIL} 且不消耗转职书。
+     */
+    public static InteractionResult tryApplyJobBook(EntityMaid maid, Player player, String jobKey, ItemStack stack) {
+        if (player.level().isClientSide) return InteractionResult.SUCCESS;
+
+        // 检查所有权（只有主人可以转职）
+        if (maid.getOwner() != player) {
+            player.sendSystemMessage(Component.translatable("maidtaskfilter.book.not_owner"));
+            return InteractionResult.FAIL;
+        }
+
+        // 检查能否覆盖已有职业（配置项 allowJobOverwrite，默认允许）
+        String currentJob = getJobKey(maid);
+        if (!MaidTaskFilterConfig.allowJobOverwrite() && !currentJob.isEmpty()) {
+            JobDefinition current = JobConfig.getJob(currentJob);
+            String currentName = current != null ? current.name() : currentJob;
+            player.sendSystemMessage(Component.translatable(
+                    "maidtaskfilter.book.already_assigned", currentName));
+            return InteractionResult.FAIL; // 拒绝时不消耗转职书
+        }
+
+        // 应用职业
+        if (OMNI_JOB_KEY.equals(jobKey)) {
+            // 全能手册：清空职业限制，允许所有任务
+            applyOmni(maid, player);
+        } else {
+            JobDefinition job = JobConfig.getJob(jobKey);
+            if (job == null) {
+                player.sendSystemMessage(Component.translatable(
+                        "maidtaskfilter.book.unknown_job", jobKey));
+                return InteractionResult.FAIL;
+            }
+            applyJob(maid, player, job);
+        }
+
+        // 消耗转职书（创造模式永不消耗；配置项 consumeJobBook=false 时也不消耗）
+        if (!player.isCreative() && MaidTaskFilterConfig.consumeJobBook()) {
+            stack.shrink(1);
+        }
+
+        return InteractionResult.SUCCESS;
+    }
+
+    /** 为女仆分配职业 */
+    private static void applyJob(EntityMaid maid, Player player, JobDefinition job) {
+        // 写入职业数据（自动同步客户端，含 jobKey）
+        setJobData(maid, job.key(), job.tasksAsString());
+        // 清除旧的好感度加成记录，由 applyJobBonuses 重新计算
+        maid.getPersistentData().remove(FAV_TRACK_KEY);
+
+        applyJobBonuses(maid, job);
+
+        player.sendSystemMessage(Component.translatable(
+                "maidtaskfilter.book.assigned", maid.getName().getString(), job.name()));
+        LOGGER.info("[MaidTaskFilter] {} assigned job '{}' to maid {}",
+                player.getName().getString(), job.key(), maid.getName().getString());
+    }
+
+    /** 全能手册 —— 清空所有职业限制 */
+    private static void applyOmni(EntityMaid maid, Player player) {
+        // 写入 omni 职业数据（不过滤 = 全部可用）
+        setJobData(maid, OMNI_JOB_KEY, "");
+        maid.getPersistentData().remove(FAV_TRACK_KEY);
+
+        // 清除所有职业加成
+        clearJobBonuses(maid);
+
+        player.sendSystemMessage(Component.translatable(
+                "maidtaskfilter.book.omni", maid.getName().getString()));
     }
 
     // ---- 好感度加成 ----
