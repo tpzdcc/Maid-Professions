@@ -266,7 +266,7 @@ src/main/java/com/maidtaskfilter/
 
 - 作者：DoomsdayRestaurantDev（末日餐馆整合包）
 - 版本：2.0.0
-- 许可：All Rights Reserved（当前）
+- 许可：[MIT](LICENSE.txt)
 
 ---
 
